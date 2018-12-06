@@ -908,7 +908,7 @@ int main(int argc, char *argv[]) {
 
     pa_log_info("This is PulseAudio %s", PACKAGE_VERSION);
     pa_log_debug("Compilation host: %s", CANONICAL_HOST);
-    pa_log_debug("Compilation CFLAGS: %s", PA_CFLAGS);
+    pa_log_debug("Compilation CFLAGS: ***");
 
 #ifdef HAVE_LIBSAMPLERATE
     pa_log_warn("Compiled with DEPRECATED libsamplerate support!");
