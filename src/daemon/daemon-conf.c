@@ -155,12 +155,14 @@ pa_daemon_conf *pa_daemon_conf_new(void) {
     c->dl_search_path = pa_sprintf_malloc("%s" PA_PATH_SEP "lib" PA_PATH_SEP "pulse-%d.%d" PA_PATH_SEP "modules",
                                           pa_win32_get_toplevel(NULL), PA_MAJOR, PA_MINOR);
 #else
+#ifdef HAVE_RUNNING_FROM_BUILD_TREE
     if (pa_run_from_build_tree()) {
         pa_log_notice("Detected that we are run from the build tree, fixing search path.");
         c->dl_search_path = pa_xstrdup(PA_BUILDDIR);
     } else
-        c->dl_search_path = pa_xstrdup(PA_DLSEARCHPATH);
 #endif
+        c->dl_search_path = pa_xstrdup(PA_DLSEARCHPATH);
+#endif //Endof #ifdef OS_IS_WIN32
 
     return c;
 }
