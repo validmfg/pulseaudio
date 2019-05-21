@@ -87,18 +87,19 @@ static pa_hook_result_t source_put_hook_callback(pa_core *c, pa_source *source, 
         return PA_HOOK_OK;
 
     if (u->enable_a2dp_source && pa_streq(s, "a2dp_source"))
-        role = "music";
+    {
+	args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=music\" latency_msec=300", source->name);
+    }
     /* TODO: remove hfgw when we remove BlueZ 4 support */
     else if (u->enable_ag && (pa_streq(s, "hfgw") || pa_streq(s, "headset_audio_gateway")))
-        role = "phone";
+    {
+    	args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=phone\" fast_adjust_threshold_msec=400", source->name);
+    }
     else {
         pa_log_debug("Profile %s cannot be selected for loopback", s);
         return PA_HOOK_OK;
     }
 
-    /* Load module-loopback */
-    args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=%s\"", source->name,
-                             role);
     (void) pa_module_load(&m, c, "module-loopback", args);
     pa_xfree(args);
 
@@ -137,7 +138,7 @@ static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, void *
     }
 
     /* Load module-loopback */
-    args = pa_sprintf_malloc("sink=\"%s\" sink_dont_move=\"true\" source_output_properties=\"media.role=%s\"", sink->name,
+    args = pa_sprintf_malloc("sink=\"%s\" sink_dont_move=\"true\" source_output_properties=\"media.role=%s\" fast_adjust_threshold_msec=400", sink->name,
                              role);
     (void) pa_module_load(&m, c, "module-loopback", args);
     pa_xfree(args);
