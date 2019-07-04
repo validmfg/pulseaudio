@@ -30,6 +30,7 @@
 #include <pulsecore/source-output.h>
 #include <pulsecore/source.h>
 #include <pulsecore/core-util.h>
+#include <pulsecore/namereg.h>
 
 PA_MODULE_AUTHOR("Frédéric Dalleau, Pali Rohár");
 PA_MODULE_DESCRIPTION("Policy module to make using bluetooth devices out-of-the-box easier");
@@ -39,13 +40,22 @@ PA_MODULE_USAGE(
         "auto_switch=<Switch between hsp and a2dp profile? (0 - never, 1 - media.role=phone, 2 - heuristic> "
         "a2dp_source=<Handle a2dp_source card profile (sink role)?> "
         "ag=<Handle headset_audio_gateway card profile (headset role)?> "
-        "hfgw=<Handle hfgw card profile (headset role)?> DEPRECATED");
+        "hfgw=<Handle hfgw card profile (headset role)?> DEPRECATED "
+        "phoneSource=<source to use for phone> "
+        "phoneSink=<sink to use for phone> "
+        "a2dp_latency=<target latency for a2dp> "
+        "fast_adj_ms=<fast adjust threshold for phone> "
+    );
 
 static const char* const valid_modargs[] = {
     "auto_switch",
     "a2dp_source",
     "ag",
     "hfgw",
+    "phoneSource",
+    "phoneSink",
+    "a2dp_latency",
+    "fast_adj_ms",
     NULL
 };
 
@@ -53,6 +63,10 @@ struct userdata {
     uint32_t auto_switch;
     bool enable_a2dp_source;
     bool enable_ag;
+    uint32_t a2dp_latency;
+    uint32_t fast_adjust_threshold_ms;
+    pa_source *source_phone;
+    pa_sink *sink_phone;
     pa_hook_slot *source_put_slot;
     pa_hook_slot *sink_put_slot;
     pa_hook_slot *source_output_put_slot;
@@ -88,12 +102,16 @@ static pa_hook_result_t source_put_hook_callback(pa_core *c, pa_source *source, 
 
     if (u->enable_a2dp_source && pa_streq(s, "a2dp_source"))
     {
-	args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=music\" latency_msec=300", source->name);
+        if(u->a2dp_latency < 100) u->a2dp_latency = 300;
+        args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=music\" latency_msec=%d",
+                                    source->name, u->a2dp_latency);
     }
     /* TODO: remove hfgw when we remove BlueZ 4 support */
     else if (u->enable_ag && (pa_streq(s, "hfgw") || pa_streq(s, "headset_audio_gateway")))
     {
-    	args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=phone\" fast_adjust_threshold_msec=400", source->name);
+        args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=phone\" fast_adjust_threshold_msec=%d",
+                                    source->name, u->fast_adjust_threshold_ms);
+        if(u->sink_phone) args = pa_sprintf_malloc("%s sink=\"%s\"", args, u->sink_phone->name);
     }
     else {
         pa_log_debug("Profile %s cannot be selected for loopback", s);
@@ -138,8 +156,9 @@ static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, void *
     }
 
     /* Load module-loopback */
-    args = pa_sprintf_malloc("sink=\"%s\" sink_dont_move=\"true\" source_output_properties=\"media.role=%s\" fast_adjust_threshold_msec=400", sink->name,
-                             role);
+    args = pa_sprintf_malloc("sink=\"%s\" sink_dont_move=\"true\" source_output_properties=\"media.role=%s\" fast_adjust_threshold_msec=%d",
+                                sink->name, role, u->fast_adjust_threshold_ms);
+    if(u->source_phone) args = pa_sprintf_malloc("%s source=\"%s\"", args, u->source_phone->name);
     (void) pa_module_load(&m, c, "module-loopback", args);
     pa_xfree(args);
 
@@ -412,6 +431,8 @@ static void handle_all_profiles(pa_core *core) {
 
 int pa__init(pa_module *m) {
     pa_modargs *ma;
+    pa_source *source_master=NULL;
+    pa_sink *sink_master=NULL;
     struct userdata *u;
 
     pa_assert(m);
@@ -457,6 +478,28 @@ int pa__init(pa_module *m) {
         pa_log("Failed to parse ag argument.");
         goto fail;
     }
+
+    if (pa_modargs_get_value_u32(ma, "a2dp_latency", &u->a2dp_latency) < 0) {
+        pa_log("Failed to parse a2dp_latency argument.");
+        goto fail;
+    }
+
+    if (pa_modargs_get_value_u32(ma, "fast_adj_ms", &u->fast_adjust_threshold_ms) < 0) {
+        pa_log("Failed to parse fast_adj_ms argument.");
+        goto fail;
+    }
+
+    if (!(u->source_phone = pa_namereg_get(m->core, pa_modargs_get_value(ma, "phoneSource", NULL), PA_NAMEREG_SOURCE))) {
+        pa_log("Phone source not found");
+        goto fail;
+    }
+    pa_assert(u->source_phone);
+
+    if (!(u->sink_phone = pa_namereg_get(m->core, pa_modargs_get_value(ma, "phoneSink", NULL), PA_NAMEREG_SINK))) {
+        pa_log("Phone sink not found");
+        goto fail;
+    }
+    pa_assert(u->sink_phone);
 
     u->will_need_revert_card_map = pa_hashmap_new(pa_idxset_trivial_hash_func, pa_idxset_trivial_compare_func);
 
